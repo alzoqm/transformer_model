@@ -61,7 +61,7 @@ class WindowAttention(tf.keras.layers.Layer):
     self.dropout = tf.keras.layers.Dropout(dropout)
 
     num_window_elements = (2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1)
-    self.relative_position_bias_table = self.add_weight(shape=(num_window_elements, self.num_heads), initializer=tf.initializers.Zeros(), trainable=True)
+    self.relative_position_bias_table = self.add_weight(shape=(num_window_elements, self.num_heads), initializer=tf.initializers.Zeros(), trainable=Truele=True, name=self.name + '/relative_position_bias_table')
 
     coords_h = np.arange(self.window_size[0])
     coords_w = np.arange(self.window_size[1])
@@ -76,7 +76,7 @@ class WindowAttention(tf.keras.layers.Layer):
     relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
     relative_position_index = relative_coords.sum(-1)
 
-    self.relative_position_index = tf.Variable(initial_value=tf.convert_to_tensor(relative_position_index), trainable=False)
+    self.relative_position_index = tf.Variable(initial_value=tf.convert_to_tensor(relative_position_index), trainable=False, name=self.name + '/relative_position_index')
 
   def call(self, input, mask=None):
     _, size, channels = input.shape
@@ -180,7 +180,7 @@ class SwinTransformerBlock(tf.keras.layers.Layer):
     attn_mask = tf.where(attn_mask != 0, -100., attn_mask)
     attn_mask = tf.where(attn_mask == 0, 0., attn_mask)
 
-    return tf.Variable(attn_mask, trainable=False)
+    return tf.Variable(attn_mask, trainable=False, name=self.name + '/attn_mask')
 
   def call(self, input, input_size):
     height, width = input_size
