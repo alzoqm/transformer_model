@@ -11,23 +11,6 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tqdm import tqdm
 
-"""
-Parameter
-
-HEIGHT = 128
-WIDTH = 128
-PATCH_SIZE = 1
-IN_CHANS = 3
-EMB_SIZE = 240
-DEPTHS = [6, 6, 6, 6, 6]
-NUM_HEADS = [8, 8, 8, 8, 8]
-WINDOW_SIZE = 8
-DFF = EMB_SIZE * 4
-DROPOUT = 0.1
-APE = True
-UPSCALE = 2
-IMG_RANGE = 1.
-"""
 
 def window_partition(x, window_size):
   _, height, width, channels = x.shape
@@ -455,7 +438,25 @@ class SwinIR(tf.keras.Model):
     
     return x
 
+"""
+Parameter
 
+HEIGHT = 128
+WIDTH = 128
+PATCH_SIZE = 1
+IN_CHANS = 3
+EMB_SIZE = 240
+DEPTHS = [6, 6, 6, 6, 6]
+NUM_HEADS = [8, 8, 8, 8, 8]
+WINDOW_SIZE = 8
+DFF = EMB_SIZE * 4
+DROPOUT = 0.1
+APE = True
+UPSCALE = 2
+IMG_RANGE = 1.
+"""
+  
+  
 """
 model = SwinIR(img_size=(HEIGHT, WIDTH), patch_size=PATCH_SIZE, in_chans=IN_CHANS, emb_size=EMB_SIZE, depths=DEPTHS, num_heads=NUM_HEADS, window_size=WINDOW_SIZE, dff=DFF, dropout=DROPOUT, ape=APE, upscale=UPSCALE, img_range=IMG_RANGE)
 x = tf.random.normal(shape=(1, 128, 128, 3))
