@@ -114,7 +114,7 @@ class MLP(tf.keras.layers.Layer):
     output = self.dropout(output)
     return output
 
-class SwinTransformerBlock(tf.keras.layers.Layer):
+class SwinTransformerBlock(tf.keras.Model):
   def __init__(self, window_size, input_resolution, dff, emb_size, shift_size, num_heads, dropout):
     super().__init__()
     self.window_size = window_size
@@ -135,35 +135,71 @@ class SwinTransformerBlock(tf.keras.layers.Layer):
     self.norm_layer2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
     self.mlp = MLP(dff, emb_size, dropout)
 
-    self.dropout = tf.keras.layers.Dropout(dropout)
+    self.dropout1 = tf.keras.layers.Dropout(dropout)
+    self.dropout2 = tf.keras.layers.Dropout(dropout)
+
+
+  def build(self, input_shape):
+    if self.shift_size == 0 :
+      self.attn_mask = None
+    else:
+      height, width = self.input_resolution
+      h_slice = (
+          slice(0, -self.window_size),
+          slice(-self.window_size, -self.shift_size),
+          slice(-self.shift_size, None)
+      )
+      w_slice = (
+          slice(0, -self.window_size),
+          slice(-self.window_size, -self.shift_size),
+          slice(-self.shift_size, None)
+      )
+      mask_array = np.zeros((1, height, width, 1))
+      count = 0
+      for h in h_slice:
+        for w in w_slice:
+          mask_array[:, h, w, :] = count
+          count += 1
+      mask_array = tf.convert_to_tensor(mask_array)
+
+      mask_windows = window_partition(mask_array, self.window_size)
+      mask_windows = tf.reshape(mask_windows, shape=(-1, self.window_size * self.window_size))
+      attn_mask = tf.expand_dims(mask_windows, axis=1) - tf.expand_dims(mask_windows, axis=2)
+      attn_mask = tf.where(attn_mask != 0, -100.0, attn_mask)
+      attn_mask = tf.where(attn_mask == 0, 0.0, attn_mask)
+      self.attn_mask = tf.Variable(initial_value=attn_mask, trainable=False, name=self.name + '/attn_mask')
+
+  def call(self, input, input_size):
+    height, width = self.input_resolution
+    _, num_patch_before, channels = input.shape
+
+    attn_output = self.norm_layer1(input)
+    attn_output = tf.reshape(attn_output, shape=(-1, height, width, channels))
 
     if self.shift_size > 0:
-      self.input_attn_mask = self.calculate_mask(self.input_resolution)
-    else:
-      self.input_attn_mask = None
+      attn_output = tf.roll(attn_output, shift=[-self.shift_size, -self.shift_size], axis=[1, 2])
 
+    attn_output = window_partition(attn_output, self.window_size)
+    attn_output = tf.reshape(attn_output, shape=(-1, self.window_size * self.window_size, channels))
 
-  def calculate_mask(self, input_size):
-    height, width = input_size
+    attn_output = self.attn_layer(attn_output, mask=self.attn_mask)
 
-    h_slice = (slice(0, -self.window_size), slice(-self.window_size, -self.shift_size), slice(-self.shift_size, None), )
-    w_slice = (slice(0, -self.window_size), slice(-self.window_size, -self.shift_size), slice(-self.shift_size, None), )
-    mask_array = np.zeros((1, height, width, 1))
+    attn_output = tf.reshape(attn_output, shape=(-1, self.window_size, self.window_size, channels))
+    attn_output = window_reverse(attn_output, self.window_size, height, width, channels)
 
-    count = 0
-    for h in h_slice:
-      for w in w_slice:
-        mask_array[:, h, w, :] = count
-        count += 1
-    mask_array = tf.convert_to_tensor(mask_array)
+    if self.shift_size > 0:
+      attn_output = tf.roll(attn_output, shift=[self.shift_size, self.shift_size], axis=[1, 2])
 
-    mask_windows = window_partition(mask_array, self.window_size)
-    mask_windows = tf.reshape(mask_windows, shape=(-1, self.window_size * self.window_size))
-    attn_mask = tf.expand_dims(mask_windows, axis=1) - tf.expand_dims(mask_windows, axis=2)
-    attn_mask = tf.where(attn_mask != 0, -100., attn_mask)
-    attn_mask = tf.where(attn_mask == 0, 0., attn_mask)
+    attn_output = tf.reshape(attn_output, shape=(-1, height * width, channels))
+    attn_output = self.dropout1(attn_output)
+    attn_output = input + attn_output
 
-    return tf.Variable(attn_mask, trainable=False, name=self.name + '/attn_mask')
+    output = self.norm_layer2(attn_output)
+    output = self.mlp(output)
+    output = self.dropout2(output)
+    output = attn_output + output
+
+    return output
 
   def call(self, input, input_size):
     height, width = input_size
