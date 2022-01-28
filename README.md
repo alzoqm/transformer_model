@@ -1,2 +1,3 @@
 # transformer_model
-swinIR: https://github.com/alzoqm/transformer_model/tree/main/models/swinIR <br>
+SwinIR: https://github.com/alzoqm/transformer_model/tree/main/models/swinIR <br>
+Hourglass: https://github.com/alzoqm/transformer_model/tree/main/models/hourglass
