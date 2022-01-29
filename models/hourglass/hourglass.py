@@ -33,6 +33,9 @@ class MultiHeadAttention(torch.nn.Module):
     
     return torch.Tensor(results)
 
+  def make_decoder_mask(self, attn_mat):
+    return torch.tril(torch.ones_like(attn_mat)) == 0
+
   def forward(self, q, k, v, mask=None):
     batch_size = q.shape[0]
 
@@ -44,8 +47,10 @@ class MultiHeadAttention(torch.nn.Module):
     k = torch.reshape(k, shape=(batch_size, -1, self.num_heads, self.depth)).permute(0, 2, 1, 3)
     v = torch.reshape(v, shape=(batch_size, -1, self.num_heads, self.depth)).permute(0, 2, 1, 3)
 
-    attn_mat = q @ k.transpose(-2, -1)
+    attn_mat = q @ k.transpose(-2, -1) # -> shape(b, m, m)
     attn_mat *= self.scale
+    decoder_mask = self.make_decoder_mask(attn_mat)
+
     for i in range(attn_mat.shape[0]):
       seq_len = attn_mat[i].shape[-1]
       RPE = self.make_relative_positional_encoding(seq_len)
@@ -54,7 +59,8 @@ class MultiHeadAttention(torch.nn.Module):
     if mask is not None:
       mask = mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1)
       attn_mat.masked_fill_(mask, -1e9)
-    
+      
+    attn_mat.masked_fill_(decoder_mask, -1e9)
     attn_mat = self.softmax(attn_mat)
 
     output = torch.reshape((attn_mat @ v).permute(0, 2, 1, 3), shape=(batch_size, -1, self.d_model))
@@ -116,7 +122,7 @@ class LinearPooling(nn.Module):
     self.d_model = d_model
 
   def forward(self, x):
-    assert x.shape[-2] % self.k == 0
+    assert x.shape[-2] % self.k == 0, f"Error! shorten factor can't divide length. shorten factor: {self.k}, length: {x.shape[-2]}."
     x = einops.rearrange(x, 'b (m k) d -> b m (k d)', k = self.k)
     x = self.proj(x)
     return x
@@ -142,16 +148,19 @@ class LinearUpsampling(nn.Module):
     return x
 
 class Hourglass(torch.nn.Module):
-  def __init__(self, max_len, vocab_size, num_layers, dff, d_model, num_heads, dropout, k, updown_mode='Linear'):
+  def __init__(self, max_len, vocab_size, num_layers, dff, d_model, num_heads, dropout, k, updown_mode='linear'):
     super().__init__()
     assert len(num_layers) == len(k) * 2 + 1, f"List Length Error! must be len(num_layers) == len(k) * 2 + 1. now len(k): {len(k)} len(num_layers): {len(num_layers)}."
     self.k_len = len(k)
     self.word_emb = nn.Embedding(vocab_size, d_model)
     
+
+    ####pre vanilla layers####
     self.pre_vanilla_layers = nn.ModuleList([
                                              DecoderLayer(dff, d_model, num_heads, dropout) for i in range(num_layers[0])
     ])
 
+    ####shortening layers####
     if updown_mode.lower() == 'linear':
       self.shortening_layers = nn.ModuleList([
                                               LinearPooling(d_model, k[i]) for i in range(len(k))
@@ -163,8 +172,9 @@ class Hourglass(torch.nn.Module):
     else:
       raise Exception("unknown updown mode")
 
-    k.reverse()
+    k.reverse() #reverse 이후 upsampling
 
+    ####upsampling layers####
     if updown_mode.lower() == 'linear':
       self.upsampling_layers = nn.ModuleList([
                                               LinearUpsampling(d_model, k[i]) for i in range(len(k))
@@ -176,9 +186,9 @@ class Hourglass(torch.nn.Module):
     else:
       raise Exception("unknown updown mode")
 
-
+    ####shortening transformer layers####
     if len(k) > 1:
-      self.Shortened_layers = nn.ModuleList([
+      self.shortened_layers = nn.ModuleList([
                                             nn.ModuleList([
                                                             DecoderLayer(dff, d_model, num_heads, dropout) for j in range(num_layers[i+1])
                                             ]) for i in range(len(k) - 1)
@@ -188,7 +198,7 @@ class Hourglass(torch.nn.Module):
                                     DecoderLayer(dff, d_model, num_heads, dropout) for i in range(num_layers[len(k)])
     ])
 
-
+    ####upsampling transformer layers####
     if len(k) > 1:
       self.up_layers = nn.ModuleList([
                                       nn.ModuleList([
@@ -196,20 +206,28 @@ class Hourglass(torch.nn.Module):
                                       ]) for i in range(len(num_layers) // 2 + 1, len(num_layers) - 1)
       ])
 
+    ####post vanilla layers####
     self.post_vanilla_layers = nn.ModuleList([
                                               DecoderLayer(dff, d_model, num_heads, dropout) for i in range(num_layers[-1])
     ])
 
+  def make_pad_mask(self, x):
+    B, L = x.shape
+    mask = x == 0 #padding index = 0
+    return mask.unsqueeze(1).expand(B, L, L)
+
   def forward(self, x):
+    mask = self.make_pad_mask(x) #pre, post vanila layer에만 적용할 예정
     output = self.word_emb(x)
 
     residual_list = []
+
     for i in range(self.k_len):
       if i == 0:
-        for layer in self.pre_vanilla_layers:
-          output, attn_mat = layer(output)
+        for layer in self.pre_vanilla_layers: 
+          output, attn_mat = layer(output, mask) #pre layer padding mask 적용
       else:
-        for layer in self.Shortened_layers[i-1]:
+        for layer in self.shortened_layers[i-1]:
           output, attn_mat = layer(output)
       residual_list.append(output)
       output = self.shortening_layers[i](output)
@@ -220,13 +238,13 @@ class Hourglass(torch.nn.Module):
 
     for i in range(self.k_len):
       output = self.upsampling_layers[i](output)
-      output = output + residual_list[i]
+      output = output + residual_list[i] #residual connect
       
       if i == self.k_len - 1:
         for index, layer in enumerate(self.post_vanilla_layers):
-          output, attn_mat = layer(output)
+          output, attn_mat = layer(output, mask) #post layer padding mask 적용
           if index == 0:
-            output = output + residual_list[i]         
+            output = output + residual_list[i] #첫 번째 레이어일 경우 residual connect      
       else:
         for index, layer in enumerate(self.up_layers[i]):
           output, attn_mat = layer(output)
@@ -235,9 +253,9 @@ class Hourglass(torch.nn.Module):
 
     return output
 
-hourglass = Hourglass(128, 3000, [2, 2, 2, 2, 2], 256*4, 256, 8, 0.1, [2, 2], 'linear')
+hourglass = Hourglass(128, 3000, [2, 2, 2, 2, 2, 2, 2, 2, 2], 256*4, 256, 8, 0.1, [2, 2, 2, 2], 'linear')
 
-x = torch.arange(3*128).reshape(3, 128)
+x = torch.arange(3*256).reshape(3, 256)
 y = hourglass(x)
 
 print(y.shape)
