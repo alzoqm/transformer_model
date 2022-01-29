@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-
-!pip install einops
-
 import torch
 import torch.nn as nn
 import tensorflow as tf
