@@ -144,10 +144,28 @@ class LinearUpsampling(nn.Module):
     return x
 
 class Hourglass(torch.nn.Module):
-  def __init__(self, max_len, vocab_size, num_layers, dff, d_model, num_heads, dropout, k, updown_mode='linear'):
+  r"""" Hourglass
+  args 설명:
+    max_len: 입력 토큰의 최대 갯수를 말합니다.
+
+    num_layers: 트랜스포머 디코더 레이어의 갯수를 리스트 형태로 입력 받습니다. index값 0과 -1의 값은 바닐라 트랜스포머의 갯수이며
+    그 사이의 값은 shorten과 upsample 이후의 트랜스포머 레이어의 수를 입력합니다.
+    ex) num_layers = [2, 2, 2, 2, 2] -> num_layers[0], num_layers[-1]: pre vanilla layer 갯수, post vanilla layer 갯수
+
+    shorten_factors: pooling과 upsample할 횟수를 리스트 형태로 입력 받습니다. 리스트 내의 값들은 각각 pooling과 upsample 시행할때 줄이는 길이를 말합니다.
+    ex) shorten_factors = [2, 2] -> upsample과 pooling 모두 len(shorten_factors) = 2번 반복하며, 각각의 시행할때 마다 length // 2로 시행됩니다.
+    ****shorten_factors의 값은 max_len으로 나누어 떨어지는 값을 가져야 합니다. ex) shorten_factors=[3], max_len =128 -> ERROR 발생!****
+    ****shorten_factors의 리스트의 길이와 num_layers의 리스트의 길이는 아래의 공식을 따라야 합니다.****
+           len(num_layers) == len(shorten_factors) * 2 + 1
+
+    updown_mode: pooling과 upsample의 방식을 설정할 수 있습니다. "linear"를 입력시 linear pooling 과 linear upsample을 시행하며,
+    "naive"를 입력시 naive pooling, naive upsample를 시행합니다. (대문자도 허용)
+
+  """
+  def __init__(self, max_len, vocab_size, num_layers, dff, d_model, num_heads, dropout, shorten_factors, updown_mode='linear'):
     super().__init__()
-    assert len(num_layers) == len(k) * 2 + 1, f"List Length Error! must be len(num_layers) == len(k) * 2 + 1. now len(k): {len(k)} len(num_layers): {len(num_layers)}."
-    self.k_len = len(k)
+    assert len(num_layers) == len(shorten_factors) * 2 + 1, f"List Length Error! must be len(num_layers) == len(shorten_factors) * 2 + 1. now len(shorten_factors): {len(shorten_factors)} len(num_layers): {len(num_layers)}."
+    self.shorten_factors_len = len(shorten_factors)
     self.word_emb = nn.Embedding(vocab_size, d_model)
     
 
@@ -159,43 +177,43 @@ class Hourglass(torch.nn.Module):
     ####shortening layers####
     if updown_mode.lower() == 'linear':
       self.shortening_layers = nn.ModuleList([
-                                              LinearPooling(d_model, k[i]) for i in range(len(k))
+                                              LinearPooling(d_model, shorten_factors[i]) for i in range(len(shorten_factors))
       ])
     elif updown_mode.lower() == 'naive':
       self.shortening_layers = nn.ModuleList([
-                                              NaivePooling(k[i]) for i in range(len(k))
+                                              NaivePooling(k[i]) for i in range(len(shorten_factors))
       ])
     else:
       raise Exception("unknown updown mode")
 
-    k.reverse() #reverse 이후 upsampling
+    shorten_factors.reverse() #reverse 이후 upsampling
 
     ####upsampling layers####
     if updown_mode.lower() == 'linear':
       self.upsampling_layers = nn.ModuleList([
-                                              LinearUpsampling(d_model, k[i]) for i in range(len(k))
+                                              LinearUpsampling(d_model, shorten_factors[i]) for i in range(len(shorten_factors))
       ])
     elif updown_mode.lower() == 'naive':
       self.upsampling_layers = nn.ModuleList([
-                                              NaiveUpsampling(k[i]) for i in range(len(k))
+                                              NaiveUpsampling(shorten_factors[i]) for i in range(len(shorten_factors))
       ])
     else:
       raise Exception("unknown updown mode")
 
     ####shortening transformer layers####
-    if len(k) > 1:
+    if len(shorten_factors) > 1:
       self.shortened_layers = nn.ModuleList([
                                             nn.ModuleList([
                                                             DecoderLayer(dff, d_model, num_heads, dropout) for j in range(num_layers[i+1])
-                                            ]) for i in range(len(k) - 1)
+                                            ]) for i in range(len(shorten_factors) - 1)
       ])
 
     self.middle_layers = nn.ModuleList([
-                                    DecoderLayer(dff, d_model, num_heads, dropout) for i in range(num_layers[len(k)])
+                                    DecoderLayer(dff, d_model, num_heads, dropout) for i in range(num_layers[len(shorten_factors)])
     ])
 
     ####upsampling transformer layers####
-    if len(k) > 1:
+    if len(shorten_factors) > 1:
       self.up_layers = nn.ModuleList([
                                       nn.ModuleList([
                                                      DecoderLayer(dff, d_model, num_heads, dropout) for j in range(num_layers[i])
@@ -218,7 +236,7 @@ class Hourglass(torch.nn.Module):
 
     residual_list = []
 
-    for i in range(self.k_len):
+    for i in range(self.shorten_factors_len):
       if i == 0:
         for layer in self.pre_vanilla_layers: 
           output, attn_mat = layer(output, mask) #pre layer padding mask 적용
@@ -232,11 +250,11 @@ class Hourglass(torch.nn.Module):
     for layer in self.middle_layers:
       output, attn_mat = layer(output)
 
-    for i in range(self.k_len):
+    for i in range(self.shorten_factors_len):
       output = self.upsampling_layers[i](output)
       output = output + residual_list[i] #residual connect
       
-      if i == self.k_len - 1:
+      if i == self.shorten_factors_len - 1:
         for index, layer in enumerate(self.post_vanilla_layers):
           output, attn_mat = layer(output, mask) #post layer padding mask 적용
           if index == 0:
@@ -249,12 +267,15 @@ class Hourglass(torch.nn.Module):
 
     return output
 
-hourglass = Hourglass(128, 3000, [2, 2, 2, 2, 2, 2, 2, 2, 2], 256*4, 256, 8, 0.1, [2, 2, 2, 2], 'linear')
+  
+if __name__ == "__main__":
+  print(Hourglass.__doc__)
+  hourglass = Hourglass(128, 3000, [2, 2, 2, 2, 2, 2, 2, 2, 2], 256*4, 256, 8, 0.1, [2, 2, 2, 2], 'linear')
 
-x = torch.arange(3*256).reshape(3, 256)
-y = hourglass(x)
+  x = torch.arange(3*256).reshape(3, 256)
+  y = hourglass(x)
 
-print(y.shape)
 
-print(hourglass.parameters)
+  #print(hourglass.parameters)
+  print(y.shape)
 
