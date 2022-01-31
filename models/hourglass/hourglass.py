@@ -64,6 +64,7 @@ class MultiHeadAttention(torch.nn.Module):
 
     return output, attn_mat
 
+  
 class FFNN(torch.nn.Module):
   def __init__(self, dff, d_model, dropout):
     super().__init__()
@@ -80,6 +81,7 @@ class FFNN(torch.nn.Module):
 
     return x
 
+  
 class DecoderLayer(torch.nn.Module):
   def __init__(self, dff, d_model, num_heads, dropout):
     super().__init__()
@@ -101,6 +103,7 @@ class DecoderLayer(torch.nn.Module):
     output = self.layer_norm2(attn_output + output)
     return output, attn_mat
 
+  
 class NaivePooling(nn.Module):
   def __init__(self, k):
     super().__init__()
@@ -123,6 +126,7 @@ class LinearPooling(nn.Module):
     x = self.proj(x)
     return x
 
+  
 class NaiveUpsampling(nn.Module):
   def __init__(self, k):
     super().__init__()
@@ -131,6 +135,7 @@ class NaiveUpsampling(nn.Module):
   def forward(self, x):
     return einops.repeat(x, 'b m d -> b (m k) d', k=self.k)
 
+  
 class LinearUpsampling(nn.Module):
   def __init__(self, d_model, k):
     super().__init__()
@@ -143,6 +148,7 @@ class LinearUpsampling(nn.Module):
     x = einops.rearrange(x, 'b m (k d) -> b (m k) d', k = self.k)
     return x
 
+  
 class Hourglass(torch.nn.Module):
   r"""" Hourglass
   args 설명:
