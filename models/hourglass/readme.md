@@ -12,7 +12,7 @@ offciial code: https://github.com/google/trax/blob/master/trax/models/research/h
 * 본 논문의 저자 분이 직접 설명한 내용이 유튜브에 있습니다. 링크: https://www.youtube.com/watch?v=soqWNyrdjkw
 * 위의 유튜브 링크를 통해 제가 이해한 내용입니다.
 * 기본적으로 트랜스포머 모델 중 decoder만을 사용하여 학습합니다.
-* downsample과 upsample의 횟수는 동일합니다. 가장 앞과 뒤의 레이어들은 2017년의 바닐라 트랜스포머 모델을 그대로 사용합니다.
+* downsample과 upsample의 횟수는 동일합니다. 가장 앞과 뒤의 레이어들은 2017년 공개된 바닐라 트랜스포머 모델을 그대로 사용합니다.
 * 각 트랜스포머 레이어들 중 마지막 레이어만 동일한 크기의 upsample 후의 output과 바로 다음의 트랜스포머 레이어의 output을 residual connection합니다.(그림의 빨간색 점선 참고)
 <img width="1031" alt="Hourglass" src="https://user-images.githubusercontent.com/70330480/152101216-e622cae6-c416-468f-9eb1-13a358293d21.png">
 
