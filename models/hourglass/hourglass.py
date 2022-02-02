@@ -32,7 +32,7 @@ class MultiHeadAttention(torch.nn.Module):
   def make_decoder_mask(self, attn_mat):
     return torch.tril(torch.ones_like(attn_mat)) == 0
 
-  def forward(self, q, k, v, mask=None):
+  def forward(self, q, k, v, mask=None, rpe=True):
     batch_size = q.shape[0]
 
     q = self.q_linear(q)
@@ -46,11 +46,11 @@ class MultiHeadAttention(torch.nn.Module):
     attn_mat = q @ k.transpose(-2, -1) # -> shape(b, m, m)
     attn_mat *= self.scale
     decoder_mask = self.make_decoder_mask(attn_mat)
-
-    for i in range(attn_mat.shape[0]):
-      seq_len = attn_mat[i].shape[-1]
-      RPE = self.make_relative_positional_encoding(seq_len)
-      attn_mat[i]  = attn_mat[i] + RPE
+    if rpe:
+      for i in range(attn_mat.shape[0]):
+        seq_len = attn_mat[i].shape[-1]
+        RPE = self.make_relative_positional_encoding(seq_len)
+        attn_mat[i]  = attn_mat[i] + RPE
 
     if mask is not None:
       mask = mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1)
@@ -114,16 +114,18 @@ class NaivePooling(nn.Module):
     
 
 class LinearPooling(nn.Module):
-  def __init__(self, d_model, k):
+  def __init__(self, d_model, num_heads, k):
     super().__init__()
     self.proj = nn.Linear(d_model*k, d_model)
     self.k = k
     self.d_model = d_model
+    self.attn = MultiHeadAttention(d_model, num_heads, 0.0)
 
   def forward(self, x):
     assert x.shape[-2] % self.k == 0, f"Error! shorten factor can't divide length. shorten factor: {self.k}, length: {x.shape[-2]}."
-    x = einops.rearrange(x, 'b (m k) d -> b m (k d)', k = self.k)
-    x = self.proj(x)
+    x_reshape = einops.rearrange(x, 'b (m k) d -> b m (k d)', k = self.k)
+    x_reshape = self.proj(x_reshape)
+    x = x_reshape + self.attn(x_reshape, x, x, None, False)[0]
     return x
 
   
@@ -183,7 +185,7 @@ class Hourglass(torch.nn.Module):
     ####shortening layers####
     if updown_mode.lower() == 'linear':
       self.shortening_layers = nn.ModuleList([
-                                              LinearPooling(d_model, shorten_factors[i]) for i in range(len(shorten_factors))
+                                              LinearPooling(d_model, num_heads, shorten_factors[i]) for i in range(len(shorten_factors))
       ])
     elif updown_mode.lower() == 'naive':
       self.shortening_layers = nn.ModuleList([
