@@ -164,7 +164,6 @@ class LinearUpsampling(nn.Module):
 
 class Hourglass(torch.nn.Module):
   r"""" Hourglass
-    ***** linear pooling시에만 attention sampling이 적용됩니다.(향후 구현예정)*****
   args 설명:
     max_len: 입력 토큰의 최대 갯수를 말합니다.
 
