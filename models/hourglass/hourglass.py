@@ -105,13 +105,18 @@ class DecoderLayer(torch.nn.Module):
 
   
 class NaivePooling(nn.Module):
-  def __init__(self, k):
+  def __init__(self, d_model, num_heads, k):
     super().__init__()
     self.k = k
+    self.d_model = d_model
+    self.attn = MultiHeadAttention(d_model, num_heads, 0.0)
   
   def forward(self, x):
-    return einops.reduce(x, 'b (m k) d -> b m d', 'mean', k = self.k)
+    x_reshape = einops.reduce(x, 'b (m k) d -> b m d', 'mean', k = self.k)
+    x = x_reshape + self.attn(x_reshape, x, x, None, False)[0]
+    return x
     
+
 
 class LinearPooling(nn.Module):
   def __init__(self, d_model, num_heads, k):
@@ -128,31 +133,38 @@ class LinearPooling(nn.Module):
     x = x_reshape + self.attn(x_reshape, x, x, None, False)[0]
     return x
 
-  
+
 class NaiveUpsampling(nn.Module):
-  def __init__(self, k):
+  def __init__(self, d_model, num_heads, k):
     super().__init__()
     self.k = k
+    self.d_model = d_model
+    self.attn = MultiHeadAttention(d_model, num_heads, 0.0)
 
-  def forward(self, x):
-    return einops.repeat(x, 'b m d -> b (m k) d', k=self.k)
+  def forward(self, x, resi_x):
+    x_reshape = einops.repeat(x, 'b m d -> b (m k) d', k=self.k)
+    x = x_reshape + self.attn(x_reshape, x, x, None, False)[0]
+    return x
 
-  
+
 class LinearUpsampling(nn.Module):
-  def __init__(self, d_model, k):
+  def __init__(self, d_model, num_heads, k):
     super().__init__()
     self.proj = nn.Linear(d_model, d_model*k)
     self.k = k
     self.d_model = d_model
+    self.attn = MultiHeadAttention(d_model, num_heads, 0.0)
 
-  def forward(self, x):
-    x = self.proj(x)
-    x = einops.rearrange(x, 'b m (k d) -> b (m k) d', k = self.k)
+  def forward(self, x, resi_x):
+    x_reshape = self.proj(x)
+    x_reshape = einops.rearrange(x_reshape, 'b m (k d) -> b (m k) d', k = self.k)
+    x = x_reshape + self.attn(x_reshape, x, x, None, False)[0]
     return x
 
-  
+
 class Hourglass(torch.nn.Module):
   r"""" Hourglass
+    ***** linear pooling시에만 attention sampling이 적용됩니다.(향후 구현예정)*****
   args 설명:
     max_len: 입력 토큰의 최대 갯수를 말합니다.
 
@@ -189,7 +201,7 @@ class Hourglass(torch.nn.Module):
       ])
     elif updown_mode.lower() == 'naive':
       self.shortening_layers = nn.ModuleList([
-                                              NaivePooling(k[i]) for i in range(len(shorten_factors))
+                                              NaivePooling(d_model, num_heads, shorten_factors[i]) for i in range(len(shorten_factors))
       ])
     else:
       raise Exception("unknown updown mode")
@@ -199,11 +211,11 @@ class Hourglass(torch.nn.Module):
     ####upsampling layers####
     if updown_mode.lower() == 'linear':
       self.upsampling_layers = nn.ModuleList([
-                                              LinearUpsampling(d_model, shorten_factors[i]) for i in range(len(shorten_factors))
+                                              LinearUpsampling(d_model, num_heads, shorten_factors[i]) for i in range(len(shorten_factors))
       ])
     elif updown_mode.lower() == 'naive':
       self.upsampling_layers = nn.ModuleList([
-                                              NaiveUpsampling(shorten_factors[i]) for i in range(len(shorten_factors))
+                                              NaiveUpsampling(d_model, num_heads, shorten_factors[i]) for i in range(len(shorten_factors))
       ])
     else:
       raise Exception("unknown updown mode")
@@ -259,8 +271,8 @@ class Hourglass(torch.nn.Module):
       output, attn_mat = layer(output)
 
     for i in range(self.shorten_factors_len):
-      output = self.upsampling_layers[i](output)
-      output = output + residual_list[i] #residual connect
+      output = self.upsampling_layers[i](output, residual_list[i])
+      #output = output + residual_list[i] #residual connect
       
       if i == self.shorten_factors_len - 1:
         for index, layer in enumerate(self.post_vanilla_layers):
