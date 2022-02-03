@@ -21,7 +21,7 @@ offciial code: https://github.com/google/trax/blob/master/trax/models/research/h
 * 기본적인 downsample 방식은 1D average pooling을 활용한 방식입니다. 하지만 본 논문의 저자 분들은 새로운 downsample 방식으로 linear pooling을 제안하고 있습니다.
 * linear pooling의 방식의 경우 먼저 shape(L, d)인 tensor를 (L/k, k*d)인 텐서로 reshape합니다. 그 뒤 linear projection을 진행하여 (L/k, d)인 tensor로 변환하는 방식을 사용합니다.
 <br><br><img width="479" alt="LinearPooling" src="https://user-images.githubusercontent.com/70330480/152104854-3e86c141-2415-416e-a3d6-4f8f53685374.png">
-* 그 뒤 attention을 진행합니다. 수식은 아래와 같습니다.
+* 그 뒤 attention 및 residual connection을 진행합니다. 수식은 아래와 같습니다.
 * ***output = Downsample(input) + Attention(Q=Downsample(input), K=V=input)***
 ### Upsampling methods
 * upsample 역시 downsample과 방식은 같습니다. 기본적인 방식은 k번 반복해서 upsample을 하는 방식이거나(논문에는 naive upsample이라고 합니다), 위의 linear pooling와 같은 방식으로 linear upsample을 할 수 있습니다.
