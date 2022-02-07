@@ -44,4 +44,7 @@ official code(pytorch): https://github.com/JingyunLiang/SwinIR
 * 본 논문에는 high-quality image reconstruction의 레이어를 구성하는 방식도 여러가지를 소개하였지만, 제가 구현한 코드에는 2가지만 구현하였으며, 나머지는 위의 github 공식 code에서 확인할 수 있습니다.
 ## Loss function
 * Loss function에도 2가지의 버전을 제시하였으며, IR task에 따라 분류됩니다.
-* Super Resolution(SR) task에선 L1 Loss를 사용하며, 나머지 분야에서 L2 Loss에 ε<sup>2</sup>을 더한 값을 사용합니다.(ε = 10<sup>-3</sup>)
+* Super Resolution(SR) task에선 L1 Loss를 사용합니다. <br>
+<center><img width="241" alt="L1_loss" src="https://user-images.githubusercontent.com/70330480/152745142-8775ecfc-c00c-405c-a319-7ce7c4010325.png"></center>
+*  나머지 분야에서 L2 Loss에 ε<sup>2</sup>을 더한 값을 사용합니다.(ε = 10<sup>-3</sup>)
+<center><img width="273" alt="L2_loss" src="https://user-images.githubusercontent.com/70330480/152745324-9ced54ab-1001-4f20-9daa-69dca9f4e5ab.png"></center>
