@@ -4,7 +4,7 @@ official code(pytorch): https://github.com/JingyunLiang/SwinIR
 
 ## paper review
 * 본 논문 리뷰는 직접 읽어보고 이해한 내용을 바탕으로 작성된 내용입니다. 따라서 잘못된 내용이 있을 수 있으니 위의 링크에 있는 논문을 반드시 읽어보기 바랍니다.
-* 본 논문 리뷰는 Introduction과 Model에 대해서만 설명하고 있습니다.
+* 본 논문 리뷰는 Introduction과 Method에 대해서만 설명하고 있습니다.
 * 본 논문은 computer vision 분야 중 Image Restoration에 관한 논문입니다.
 * code의 경우 tensorflow와 keras로 작성되었습니다.
 ## Introduction
@@ -20,6 +20,9 @@ official code(pytorch): https://github.com/JingyunLiang/SwinIR
 * 두번째는, restored image에 대해서는 각 patch의 경계면이 제대로 복원이 되지 않습니다.(원문: Second, the restored image may introduce border artifacts around each patch. 이 부분은 확실히 해석하기 힘드네요. 틀릴수도 있습니다.)
 ### swin transformer
 * 최근에는 swin transformer 구조는 shifted-window를 활용하여 기존의 cnn 구조와 vision transformer 구조의 장점을 모두 활용하는 구조가 나타났습니다.
-* 
+* 논문의 이름에서 알 수 있듯이 본 논문은 swin transformer를 활용하여 Image Restoration을 진행합니다.
+* 구조는 크게 shallow feature extraction, deep feature extraction,  high-quality image reconstruction 3가지로 구분되며, swin transformer는 deep feature extraction module에서 활용됩니다.
 
-![SwinIR_archi](https://user-images.githubusercontent.com/70330480/150893515-284dac75-783f-486a-ad9b-6235735bb8b3.png)
+## Method
+![SwinIR_archi](https://user-images.githubusercontent.com/70330480/150893515-284dac75-783f-486a-ad9b-6235735bb8b3.png) <br>
+### <center>SwinIR 구조 이미지</center>
